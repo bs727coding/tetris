@@ -35,6 +35,7 @@ mingw32-make test
 | `mingw32-make test` | Build and run the rules-engine tests |
 | `mingw32-make clean` | Delete the current configuration's build output |
 | `mingw32-make distclean` | Delete everything in `build/`, including the compiled raylib |
+| `mingw32-make icon` | Regenerate `assets/tetris.ico` from `tools/make_icon.cpp` (only needed when changing the icon) |
 
 The first build also compiles raylib from `third_party/raylib` (about 20 seconds); after that only
 changed files rebuild.
@@ -113,8 +114,12 @@ src/
   screens.cpp    title, mode select, results, leaderboards, controls
   scores.*       leaderboards and preferences on disk
 tests/test_rules.cpp   headless engine tests (SRS kicks, T-spins, scoring, lock delay, modes)
+assets/tetris.ico      application icon (16-256 px), embedded into the exe via assets/tetris.rc
+tools/make_icon.cpp    draws the icon procedurally and writes the .ico
 third_party/raylib/    raylib 6.0 source (zlib license)
 ```
+
+The icon resource is named `GLFW_ICON`, so GLFW also uses it for the game window's title bar and taskbar button.
 
 **Rendering:**
 * Everything is laid out on a 1280×720 virtual canvas and scaled to the window. Fonts are rasterized at the real on-screen size, so text stays sharp at any window size.

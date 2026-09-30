@@ -7,6 +7,7 @@
 #    mingw32-make test            build, then run the rules-engine tests
 #    mingw32-make clean           delete build output of the current CONFIG
 #    mingw32-make distclean       delete the whole build folder (incl. raylib)
+#    mingw32-make icon            regenerate assets/tetris.ico (tools/make_icon.cpp)
 #
 #  Add -j (e.g. `mingw32-make -j12`) to compile in parallel.
 # =============================================================================
@@ -23,6 +24,7 @@ endif
 ifeq ($(origin AR),default)
   AR := llvm-ar
 endif
+WINDRES ?= windres
 
 # raylib backend knobs - run `mingw32-make distclean` after changing them
 RAYLIB_PLATFORM ?= PLATFORM_DESKTOP_GLFW
@@ -55,6 +57,7 @@ RAYLIB_CFLAGS := -std=c99 -O2 -w -D_GNU_SOURCE -DUNICODE \
 # --- game --------------------------------------------------------------------
 SRCS      := $(wildcard src/*.cpp)
 OBJS      := $(SRCS:src/%.cpp=$(OBJDIR)/%.o)
+RESOURCES := $(OBJDIR)/resources.o
 TEST_OBJS := $(OBJDIR)/tests/test_rules.o $(OBJDIR)/game.o $(OBJDIR)/tetromino.o
 DEPS      := $(OBJS:.o=.d) $(OBJDIR)/tests/test_rules.d
 
@@ -76,13 +79,26 @@ else
   $(error CONFIG must be 'release' or 'debug', not '$(CONFIG)')
 endif
 
-.PHONY: all run test clean distclean
+.PHONY: all run test clean distclean icon
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS) $(RAYLIB_LIB)
+$(TARGET): $(OBJS) $(RESOURCES) $(RAYLIB_LIB)
 	@echo Linking $@
-	@$(CXX) $(LDFLAGS) $(APP_LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
+	@$(CXX) $(LDFLAGS) $(APP_LDFLAGS) -o $@ $(OBJS) $(RESOURCES) $(LDLIBS)
+
+# Icon and version info, compiled into the exe
+$(RESOURCES): assets/tetris.rc assets/tetris.ico | $(OBJDIR)
+	@echo Compiling assets/tetris.rc
+	@$(WINDRES) -I assets -i assets/tetris.rc -o $@
+
+# The icon is generated and committed; rebuild it only when changing its design
+icon: $(BUILD)/tools/make_icon.exe
+	$(call winpath,$<) assets/tetris.ico
+
+$(BUILD)/tools/make_icon.exe: tools/make_icon.cpp | $(BUILD)/tools
+	@echo Compiling tools/make_icon.cpp
+	@$(CXX) -std=c++20 -O2 -Wall -Wextra -isystem $(RAYLIB_SRC)/external $< -o $@ -static
 
 $(OBJDIR)/%.o: src/%.cpp | $(OBJDIR)
 	@echo Compiling $<
@@ -113,7 +129,7 @@ test: $(TESTBIN)
 # Output folders, created one level at a time so parallel builds never race
 $(BUILD):
 	@mkdir $(call winpath,$@)
-$(OUT) $(RAYLIB_OUT): | $(BUILD)
+$(OUT) $(RAYLIB_OUT) $(BUILD)/tools: | $(BUILD)
 	@mkdir $(call winpath,$@)
 $(OBJDIR): | $(OUT)
 	@mkdir $(call winpath,$@)

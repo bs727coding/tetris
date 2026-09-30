@@ -36,21 +36,7 @@ void setupWindow(bool alwaysRun)
     SetWindowPosition(int(mp.x) + (mw - w) / 2, int(mp.y) + (mh - h) / 2);
     SetWindowMinSize(640, 360);
     SetExitKey(KEY_NULL);
-
-    // Window icon: a small purple T
-    Image icon = GenImageColor(64, 64, BLANK);
-    const Color body{ 186, 80, 255, 255 }, shine{ 226, 176, 255, 255 };
-    auto cell = [&](int cx, int cy) {
-        const int x = 8 + cx * 16, y = 16 + cy * 16;
-        ImageDrawRectangle(&icon, x + 1, y + 1, 14, 14, body);
-        ImageDrawRectangle(&icon, x + 1, y + 1, 14, 3, shine);
-    };
-    cell(1, 0);
-    cell(0, 1);
-    cell(1, 1);
-    cell(2, 1);
-    SetWindowIcon(icon);
-    UnloadImage(icon);
+    // The window icon comes from the exe's GLFW_ICON resource (assets/tetris.rc)
 }
 
 void toggleFullscreen(App& app)
