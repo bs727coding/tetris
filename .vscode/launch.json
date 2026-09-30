@@ -1,0 +1,29 @@
+{
+    // F5 builds the debug configuration and starts it under the Visual Studio debugger
+    // (clang writes PDB debug info, see CONFIG=debug in the Makefile).
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Tetris",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/debug/tetris.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build (Debug)"
+        },
+        {
+            "name": "Run Tetris (Release)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/release/tetris.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "integratedTerminal",
+            "preLaunchTask": "Build (Release)"
+        }
+    ]
+}

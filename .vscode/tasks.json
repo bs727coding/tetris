@@ -1,0 +1,62 @@
+{
+    // Build with Ctrl+Shift+B. All tasks call the Makefile through mingw32-make.
+    "version": "2.0.0",
+    "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+            // LLVM-MinGW (installed by winget) first on PATH, so tasks work even before VS Code is restarted
+            "PATH": "${env:LOCALAPPDATA}\\Microsoft\\WinGet\\Packages\\MartinStorsjo.LLVM-MinGW.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\llvm-mingw-20260616-ucrt-aarch64\\bin;${env:PATH}"
+        }
+    },
+    "tasks": [
+        {
+            "label": "Build (Release)",
+            "type": "shell",
+            "command": "mingw32-make",
+            "args": ["-j${env:NUMBER_OF_PROCESSORS}"],
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": { "base": "$gcc", "fileLocation": ["relative", "${workspaceFolder}"] },
+            "presentation": { "reveal": "always", "clear": true }
+        },
+        {
+            "label": "Build (Debug)",
+            "type": "shell",
+            "command": "mingw32-make",
+            "args": ["CONFIG=debug", "-j${env:NUMBER_OF_PROCESSORS}"],
+            "group": "build",
+            "problemMatcher": { "base": "$gcc", "fileLocation": ["relative", "${workspaceFolder}"] },
+            "presentation": { "reveal": "always", "clear": true }
+        },
+        {
+            "label": "Run",
+            "type": "shell",
+            "command": "mingw32-make",
+            "args": ["run", "-j${env:NUMBER_OF_PROCESSORS}"],
+            "problemMatcher": { "base": "$gcc", "fileLocation": ["relative", "${workspaceFolder}"] },
+            "presentation": { "reveal": "always", "clear": true }
+        },
+        {
+            "label": "Run Tests",
+            "type": "shell",
+            "command": "mingw32-make",
+            "args": ["test", "-j${env:NUMBER_OF_PROCESSORS}"],
+            "group": { "kind": "test", "isDefault": true },
+            "problemMatcher": { "base": "$gcc", "fileLocation": ["relative", "${workspaceFolder}"] },
+            "presentation": { "reveal": "always", "clear": true }
+        },
+        {
+            "label": "Clean",
+            "type": "shell",
+            "command": "mingw32-make",
+            "args": ["clean"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean All (incl. raylib)",
+            "type": "shell",
+            "command": "mingw32-make",
+            "args": ["distclean"],
+            "problemMatcher": []
+        }
+    ]
+}
