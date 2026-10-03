@@ -1,0 +1,8 @@
+music=1
+sfx=1
+bloom=1
+fullscreen=0
+name=AUTOTEST
+mode=0
+startLevel=6
+song=0

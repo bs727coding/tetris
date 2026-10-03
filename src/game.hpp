@@ -99,11 +99,13 @@ public:
     bool over() const { return over_; }
     bool toppedOut() const { return over_ && toppedOut_; }
     bool completed() const { return over_ && !toppedOut_; }  // goal reached / time up / session ended
+    bool beaten() const { return completed() && mode_ == GameMode::Marathon && lineGoal() > 0 && stats_.lines >= lineGoal(); }
 
     double lockProgress() const;  // 0..1 while grounded
     double fallProgress() const;  // 0..1 progress toward the next gravity step
     double timeLeft() const;      // Ultra
-    int linesLeft() const;        // Sprint
+    int lineGoal() const;         // lines that end the run (Sprint, Marathon), 0 = none
+    int linesLeft() const;        // Sprint, Marathon
     int stackHeight() const;      // rows from the floor to the highest block
     bool isGrounded() const;
 

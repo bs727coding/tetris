@@ -16,11 +16,11 @@ BEGIN
     BEGIN
         BLOCK "040904B0"
         BEGIN
-            VALUE "FileDescription",  "Claude Tetris"
+            VALUE "FileDescription",  "Tetris"
             VALUE "FileVersion",      "1.0.0"
             VALUE "InternalName",     "tetris"
             VALUE "OriginalFilename", "tetris.exe"
-            VALUE "ProductName",      "Claude Tetris"
+            VALUE "ProductName",      "Tetris"
             VALUE "ProductVersion",   "1.0.0"
         END
     END

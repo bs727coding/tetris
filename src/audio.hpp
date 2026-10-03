@@ -14,7 +14,7 @@ enum class Sfx : int {
     Count
 };
 
-enum class Song : int { None = 0, Title = 1, Game = 2 };
+inline constexpr int kNoSong = -1;
 
 class Audio {
 public:
@@ -23,7 +23,16 @@ public:
 
     void play(Sfx sfx, float pitch = 1.0f, float volume = 1.0f, float pan = 0.0f);
 
-    void setSong(Song song);
+    // Songs are indices into music::kSongs (music.hpp)
+    void playSong(int song);             // loops until changed; kNoSong = silence
+    void playMenuMusic(bool next);       // the menu playlist; next = move on to its next track
+    bool menuMusicPlaying() const;
+    int currentSong() const;             // what is playing now, or kNoSong
+    static int songCount();
+    static const char* songTitle(int song);
+    static const char* songCredit(int song);
+    static bool songSecret(int song);    // only offered once the game has been beaten
+    static int creditsSong();
     void setTempo(float scale);     // 1 = the song's normal tempo
     void setMusicDuck(float gain);  // e.g. quieter while paused
     void setMusicEnabled(bool on);

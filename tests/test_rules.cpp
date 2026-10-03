@@ -345,6 +345,19 @@ void testSprintAndUltraEndings()
     CHECK(ultra.stats().time == cfg::kUltraSeconds);
 }
 
+void testMarathonVictory()
+{
+    Game g(GameMode::Marathon, 1, 7);
+    for (int i = 0; i < 60 && !g.over(); ++i) {
+        setBottom(g, { "#########.", "#########.", "#########.", "#########." });
+        dropIRight(g);
+    }
+    CHECK_EQ(g.stats().lines, cfg::kMarathonLines);
+    CHECK_EQ(g.stats().level, cfg::kMaxLevel);
+    CHECK(g.beaten());
+    CHECK(findEvent(g, EventType::Finished) != nullptr);
+}
+
 void testGravityAndLevels()
 {
     CHECK(Game::gravityInterval(1) == 1.0);
@@ -381,6 +394,7 @@ int main()
         { "hold", testHold },
         { "top out and Zen reset", testTopOutAndZen },
         { "Sprint and Ultra endings", testSprintAndUltraEndings },
+        { "Marathon victory at the line goal", testMarathonVictory },
         { "gravity curve and levels", testGravityAndLevels },
     };
     for (const Test& t : tests) {

@@ -12,9 +12,20 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
-enum class Screen { Title, ModeSelect, Play, Results, Leaderboard, Controls };
+enum class Screen { Title, ModeSelect, Play, Results, Leaderboard, Controls, Credits };
 enum class Phase { Countdown, Live, Paused, Ending };
+
+// Easter eggs, remembered in Prefs::eggs as bits
+inline constexpr int kEggKonami   = 1 << 0;  // up up down down left right left right B A on the title screen
+inline constexpr int kEggClaude   = 1 << 1;  // type CLAUDE on the title screen
+inline constexpr int kEggTune     = 1 << 2;  // type TETRIS, or click the logo letters T-E-T-R-I-S in order
+inline constexpr int kEggCredits  = 1 << 3;  // type CREDITS on the title screen
+inline constexpr int kEggBirthday = 1 << 4;  // launch on June 6, the day Tetris was first released (1984)
+inline constexpr int kEggIdle     = 1 << 5;  // leave the game paused for a while
+inline constexpr int kEggChampion = 1 << 6;  // beat Marathon (also unlocks the credits theme)
+inline constexpr int kEggCount    = 7;
 
 // Gameplay layout on the 1280x720 virtual canvas
 namespace layout {
@@ -50,8 +61,10 @@ struct App {
     float titleHi = 0.0f;
     int modeSel = 0;
     float modeHi = 0.0f;
+    float songNudge = 0.0f;  // slide of the song picker's title after a change (-1..1)
     int pauseSel = 0;
     float pauseHi = 0.0f;
+    float pausedFor = 0.0f;
     int lbMode = 0;
     int lbHighlight = -1;
     Screen lbBack = Screen::Title;
@@ -61,6 +74,7 @@ struct App {
     // current run
     std::unique_ptr<Game> game;
     GameMode mode = GameMode::Marathon;
+    int runSong = 0;  // the song playing under the current run
     Phase phase = Phase::Countdown;
     float phaseTime = 0.0f;
     double shownScore = 0.0;
@@ -81,6 +95,21 @@ struct App {
     std::unique_ptr<Game> demo;
     AutoPlayer demoBot{ 7.0 };
 
+    // end credits
+    bool creditsWin = false;     // rolled by beating the game (shows the run, then the results)
+    bool creditsUnlock = false;  // first win: announce the unlocked song
+    float creditsScroll = 0.0f;
+    float creditsFirework = 0.0f;
+
+    // easter eggs
+    int konami = 0;           // progress through the Konami code
+    std::string typed;        // recent letters typed on the title screen
+    bool party = false;       // Konami code: rainbow backdrop, confetti on every clear
+    float logoDrop[6]{};      // screen time a logo letter was knocked (0 = never)
+    int logoNext = 0;         // next letter of T-E-T-R-I-S to click
+    float tuneTime = -1.0f;   // >= 0 while the logo plays the Korobeiniki opening
+    bool birthdayDone = false;
+
     // HUD extras
     std::string toast;
     float toastTime = 0.0f;
@@ -100,6 +129,8 @@ void drawApp(App& app, Pass pass);
 void drawOverlay(App& app);  // screen space, after bloom
 void showToast(App& app, const std::string& text);
 void submitName(App& app);
+void foundEgg(App& app, int egg);  // remembers a discovered easter egg
+std::vector<int> songChoices(const App& app);  // pickable songs (locked ones left out), then -1 = shuffle
 
 // play.cpp ------------------------------------------------------------------
 void startGame(App& app, GameMode mode);

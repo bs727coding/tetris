@@ -1,4 +1,4 @@
-# Claude Tetris
+# Tetris
 
 A fast, neon-styled falling-block puzzle game for Windows, written in C++20 on top of
 [raylib](https://www.raylib.com/). Modern guideline rules (hold, ghost piece, 7-bag, SRS wall
@@ -56,6 +56,8 @@ changed files rebuild.
 | Hold | C or Shift |
 | Pause | Esc or P |
 | Music on/off | M |
+| Next menu song (title screen) | Tab |
+| Pick the game music (mode select) | Q / E |
 | Sound effects on/off | N |
 | Glow (bloom) on/off | B |
 | Fullscreen | F11 or Alt+Enter |
@@ -63,14 +65,67 @@ changed files rebuild.
 
 Menus also work with the mouse. The game pauses itself when its window loses focus.
 
+## Music
+
+Six chiptune songs, all synthesized live (no audio files):
+
+| Song | Style |
+|---|---|
+| **Korobeiniki** | The classic A-type theme (Russian folk song) |
+| **Minuet in G** | A C-type style waltz (Petzold, from Bach's Anna Magdalena notebook) |
+| **Afterglow Drive** | Original 16-bit synth-pop medley: verse, build, drop, breakdown |
+| **Maple Hollow** | Original 8-bit folk-pop medley: verses, choruses, bridge |
+| **Neon Lobby** | Original menu theme |
+| **Pixel Sunrise** | Original, bright and fast |
+
+The menus play a rotating playlist (Neon Lobby, Pixel Sunrise, Maple Hollow, Afterglow Drive). A new
+track starts each time you return to the title screen or reach the results screen, and each track
+hands over to the next when it ends. Tab on the title screen skips ahead.
+
+The mode select screen has a **Game music** picker (Q / E, or click or scroll it) that previews each
+song. Your choice, or **Shuffle**, plays during the game and is remembered.
+
+New songs go in `src/music.hpp` as note strings and chord charts. `tetris.exe --autotest <dir>`
+checks that every melody fits its chords and lists the songs in its report.
+
 ## Modes
 
 | Mode | Goal | Ranked by |
 |---|---|---|
-| **Marathon** | Endless. The level rises every 10 lines; pick a start level from 1 to 15 | Score |
+| **Marathon** | Clear 200 lines to beat the game. The level rises every 10 lines; pick a start level from 1 to 15 | Score |
 | **Sprint** | Clear 40 lines | Time (completed runs only) |
 | **Ultra** | Two minutes | Score |
 | **Zen** | Slow, steady gravity and no game over. Topping out just clears the board. End the session from the pause menu | Score |
+
+## Beating the game
+
+Clearing **200 lines in Marathon** beats the game. Speed tops out at level 20, so a run from level 1
+finishes with ten lines at full speed. A higher start level reaches full speed sooner and spends
+longer there, so it's the harder way to win. Winning ends the run with fireworks and rolls the
+**end credits**: your run's stats, the song list and thanks. The credits hand over to the usual
+results and name entry. Hold Space to fast-forward them or press Esc to skip.
+
+Your first win also unlocks the credits theme, **Victory Lap**, in the Game Music picker and adds
+"CHAMPION" to the title screen. Set `kMarathonLines` in `src/config.hpp` to 0 for an endless Marathon.
+
+## Secrets
+
+There are 7 easter eggs. The end credits show how many you've found.
+
+<details>
+<summary>Spoilers</summary>
+
+| Secret | How |
+|---|---|
+| Party mode | Konami code on the title screen: ↑ ↑ ↓ ↓ ← → ← → B A. Rainbow colours, and every line clear throws confetti. Enter it again to turn it off |
+| Hello | Type `CLAUDE` on the title screen |
+| The tune | Type `TETRIS` on the title screen, or click the logo letters T-E-T-R-I-S in order |
+| Secret credits | Type `CREDITS` on the title screen |
+| Birthday | Launch the game on June 6, the day Tetris was first released in 1984 |
+| Still there? | Leave the game paused for 45 seconds |
+| Champion | Beat Marathon |
+
+</details>
 
 ## Scoring (× current level)
 
@@ -87,7 +142,7 @@ Menus also work with the mouse. The game pauses itself when its window loses foc
 * **Perfect clear:** emptying the board adds 800 / 1200 / 1800 / 2000 (3200 for a back-to-back tetris).
 * **Drops:** soft drop scores 1 per row, hard drop 2 per row.
 
-Leaderboards (top 10 per mode) and preferences are saved in `%APPDATA%\ClaudeTetris\`.
+Leaderboards (top 10 per mode) and preferences are saved in `%APPDATA%\Tetris\`.
 
 ## Tuning
 
@@ -109,7 +164,7 @@ src/
   render.*       virtual 1280x720 canvas, font cache, block tiles, bloom, backdrop
   fx.*           particles, popups, shake, flashes, row-collapse springs
   audio.*        sound-effect synthesizer + 4-channel chiptune sequencer
-  music.hpp      song data (Korobeiniki arrangement + an original title theme)
+  music.hpp      song library: melodies, chord charts, arrangement patterns, menu playlist
   play.cpp       gameplay screen
   screens.cpp    title, mode select, results, leaderboards, controls
   scores.*       leaderboards and preferences on disk
@@ -146,5 +201,6 @@ On a Snapdragon X Elite this runs at a locked 60 fps using well under 1 ms of CP
 ## Credits
 
 * [raylib](https://github.com/raysan5/raylib) by Ramon Santamaria and contributors (zlib license).
-* The game theme is an arrangement of *Korobeiniki*, a 19th-century Russian folk song in the public domain.
+* *Korobeiniki* (a 19th-century Russian folk song) and the *Minuet in G* (Christian Petzold, c. 1725) are in
+  the public domain. The songs marked "Original" were written for this game.
 * Tetris is a trademark of The Tetris Company. This is a personal, non-commercial fan project.

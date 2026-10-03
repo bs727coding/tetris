@@ -382,8 +382,8 @@ void Game::lockPiece()
         }
         zenReset();
     }
-    if (mode_ == GameMode::Sprint && stats_.lines >= cfg::kSprintLines) {
-        finish(false);
+    if (const int goal = lineGoal(); goal > 0 && stats_.lines >= goal) {
+        finish(false);  // Sprint done, or Marathon beaten
         return;
     }
     spawn(popQueue());
@@ -515,9 +515,18 @@ double Game::timeLeft() const
     return std::max(0.0, cfg::kUltraSeconds - stats_.time);
 }
 
+int Game::lineGoal() const
+{
+    switch (mode_) {
+        case GameMode::Sprint:   return cfg::kSprintLines;
+        case GameMode::Marathon: return cfg::kMarathonLines;
+        default:                 return 0;
+    }
+}
+
 int Game::linesLeft() const
 {
-    return std::max(0, cfg::kSprintLines - stats_.lines);
+    return std::max(0, lineGoal() - stats_.lines);
 }
 
 int Game::stackHeight() const

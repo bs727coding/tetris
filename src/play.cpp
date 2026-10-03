@@ -13,6 +13,7 @@ using namespace layout;
 namespace {
 
 constexpr float kCountStep = 0.55f;
+constexpr float kIdlePause = 45.0f;  // paused this long: the idle messages appear
 constexpr Vector2 kWellCenter{ kWellX + kWellW * 0.5f, kWellY + kWellH * 0.5f };
 constexpr const char* kClearNames[5] = { "", "SINGLE", "DOUBLE", "TRIPLE", "TETRIS" };
 
@@ -41,14 +42,15 @@ void enterEnding(App& app)
     app.phase = Phase::Ending;
     app.phaseTime = 0.0f;
     app.greyRows = 0;
-    app.audio.setSong(Song::None);
+    app.audio.playSong(kNoSong);
     const Game& g = *app.game;
     const Vector2 at{ kWellCenter.x, kWellCenter.y - 30.0f };
     if (g.toppedOut()) {
         app.fx.popup("GAME OVER", at, 62, { 255, 80, 110, 255 }, 2.2f, 0.35f, Face::Bold, 0, Slot::Center);
         app.fx.shake(0.55f);
     } else {
-        const char* title = g.mode() == GameMode::Sprint ? "FINISH!" : g.mode() == GameMode::Ultra ? "TIME UP!" : "WELL PLAYED";
+        const char* title = g.mode() == GameMode::Sprint ? "FINISH!" : g.mode() == GameMode::Ultra ? "TIME UP!"
+                            : g.beaten() ? "GAME CLEAR!" : "WELL PLAYED";
         app.fx.popup(title, at, 62, kGold, 2.4f, 0.1f, Face::Bold, 0, Slot::Center);
         app.fx.confetti({ kWellX - 30.0f, kWellY + kWellH }, 110, 950.0f, -62.0f, 36.0f);
         app.fx.confetti({ kWellX + kWellW + 30.0f, kWellY + kWellH }, 110, 950.0f, -118.0f, 36.0f);
@@ -75,6 +77,10 @@ void onLineClear(App& app, const GameEvent& e)
     }
     rowsCenter /= float(std::max(1, n));
     app.fx.collapseRows(e.rows, n);
+    if (app.party) {  // Konami code: every clear is a celebration
+        app.fx.confetti({ kWellX - 20.0f, kWellY + kWellH }, 30 * n, 900.0f, -65.0f, 30.0f);
+        app.fx.confetti({ kWellX + kWellW + 20.0f, kWellY + kWellH }, 30 * n, 900.0f, -115.0f, 30.0f);
+    }
     app.lastClearLines = n;
     app.lastClearTime = app.time;
 
@@ -240,6 +246,14 @@ void finishRun(App& app)
     app.newRank = eligible ? app.book.rankFor(app.mode, e) : -1;
     app.enteringName = app.newRank >= 0;
     app.name = app.book.prefs.lastName;
+    if (g.beaten()) {  // roll the credits first; they hand over to the results
+        app.creditsWin = true;
+        app.creditsUnlock = !app.book.prefs.beaten;
+        app.book.prefs.beaten = true;
+        foundEgg(app, kEggChampion);
+        goTo(app, Screen::Credits);
+        return;
+    }
     goTo(app, Screen::Results);
 }
 
@@ -263,6 +277,9 @@ void updatePause(App& app, float dt)
     const auto items = pauseItems(app);
     const int n = int(items.size());
     app.pauseHi += (float(app.pauseSel) - app.pauseHi) * std::min(1.0f, dt * 18.0f);
+    app.pausedFor += dt;
+    if (app.pausedFor >= kIdlePause && app.pausedFor - dt < kIdlePause)
+        foundEgg(app, kEggIdle);
     if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_P)) {
         resumeGame(app);
         return;
@@ -329,6 +346,14 @@ void drawPause(App& app, Pass pass, Color accent)
                        sel ? kTextBright : kTextMuted, Align::Center, 3.0f);
     }
     drawHints(app, { { "Esc", "Resume" }, { "UP DOWN", "Choose" }, { "Enter", "Select" } }, panel.y + panel.height - 50.0f, pass);
+    if (pass == Pass::Main && app.pausedFor > kIdlePause) {  // someone wandered off
+        const float a = std::clamp((app.pausedFor - kIdlePause) / 1.5f, 0.0f, 1.0f);
+        const char* lines[] = { "Still there? The blocks miss you.", "They have been practising their spins.",
+                                "The I-piece says it is finally coming.", "Take your time. Gravity can wait." };
+        const int which = int((app.pausedFor - kIdlePause) / 8.0f) % 4;
+        app.r.text(Face::Ui, lines[which], { kWellCenter.x, panel.y + panel.height + 18.0f }, 17, fadeColor(kTextMuted, a),
+                   Align::Center);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +380,8 @@ void drawStats(App& app, Pass pass, Color accent)
     switch (app.mode) {
         case GameMode::Marathon:
             statBlock(app, pass, "LEVEL", std::to_string(s.level), y, 46, accent);
-            statBlock(app, pass, "LINES", std::to_string(s.lines), y + 88, 32, kTextBright);
+            statBlock(app, pass, "LINES", g.lineGoal() > 0 ? fmt("%d/%d", s.lines, g.lineGoal()) : std::to_string(s.lines), y + 88,
+                      32, kTextBright);
             statBlock(app, pass, "TIME", clockTime(s.time, false), y + 160, 32, kTextBright);
             statBlock(app, pass, "PIECES / SEC", pps, y + 232, 32, kTextBright);
             break;
@@ -557,6 +583,11 @@ void startGame(App& app, GameMode mode)
     const int startLevel = mode == GameMode::Marathon ? app.book.prefs.startLevel : 1;
     app.game = std::make_unique<Game>(mode, startLevel, seed);
     app.game->events().clear();
+    app.runSong = app.book.prefs.song;
+    if (app.runSong < 0 || app.runSong >= Audio::songCount()) {  // shuffle
+        const auto pool = songChoices(app);  // ends with the shuffle entry itself
+        app.runSong = pool[std::size_t(seed % std::uint64_t(pool.size() - 1))];
+    }
     app.book.prefs.lastMode = int(mode);
     app.book.savePrefs();
     goTo(app, Screen::Play);
@@ -575,7 +606,7 @@ void enterPlay(App& app)
     app.fx.reset();
     app.input.reset();
     app.testBot = AutoPlayer(30.0);
-    app.audio.setSong(Song::Game);
+    app.audio.playSong(app.runSong);
     app.audio.setTempo(1.0f);
     app.audio.setMusicDuck(1.0f);
 
@@ -596,6 +627,7 @@ void pauseGame(App& app)
     app.phase = Phase::Paused;
     app.pauseSel = 0;
     app.pauseHi = 0.0f;
+    app.pausedFor = 0.0f;
     app.audio.play(Sfx::Pause);
     app.audio.setMusicDuck(0.3f);
     app.input.reset();
@@ -654,7 +686,10 @@ void updatePlay(App& app, float dt)
             handleEvents(app);
             if (g.toppedOut())
                 app.greyRows = std::min(kVisibleH + 3, int(app.phaseTime / 0.045f));
-            if (app.phaseTime > (g.toppedOut() ? 2.0f : 2.4f))
+            if (g.beaten() && std::fmod(app.phaseTime, 0.45f) < dt)  // victory fireworks over the well
+                app.fx.burst({ kWellX + float(GetRandomValue(20, int(kWellW) - 20)), kWellY + float(GetRandomValue(60, 360)) },
+                             Renderer::pieceColor(GetRandomValue(0, 6)), 36, 420.0f, ParticleKind::Spark, 1.0f, 6.0f, 0.0f);
+            if (app.phaseTime > (g.toppedOut() ? 2.0f : g.beaten() ? 3.6f : 2.4f))
                 finishRun(app);
             break;
     }

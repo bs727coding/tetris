@@ -1,0 +1,43 @@
+status: OK
+frames: 2254
+window: 1706x960
+cpu ms per frame  p50 0.243  p95 0.3536  p99 0.452  max 16.0234
+frame interval ms avg 16.8945  (59.1909 fps)  p99 17.3048
+gameplay frames: 1530  interval ms p50 16.6619  p99 17.0696  max 33.3684  over 20 ms: 2
+screenshots: 01_title.png 02_modes.png 03_clear.png 04_play.png 05_pause.png 06_results.png 07_leaderboard.png 08_controls.png
+audio device: ready
+  sfx Move        peak 0.11  rms 0.039
+  sfx Rotate      peak 0.15  rms 0.054
+  sfx Hold        peak 0.34  rms 0.083
+  sfx SoftDrop    peak 0.11  rms 0.025
+  sfx HardDrop    peak 0.87  rms 0.234
+  sfx Lock        peak 0.21  rms 0.036
+  sfx Clear1      peak 0.25  rms 0.072
+  sfx Clear2      peak 0.30  rms 0.086
+  sfx Clear3      peak 0.36  rms 0.101
+  sfx Tetris      peak 0.58  rms 0.095
+  sfx TSpin       peak 0.28  rms 0.080
+  sfx TSpinClear  peak 0.33  rms 0.059
+  sfx Combo       peak 0.37  rms 0.086
+  sfx BackToBack  peak 0.12  rms 0.044
+  sfx AllClear    peak 0.32  rms 0.067
+  sfx LevelUp     peak 0.20  rms 0.060
+  sfx Countdown   peak 0.14  rms 0.063
+  sfx Go          peak 0.21  rms 0.083
+  sfx GameOver    peak 0.39  rms 0.094
+  sfx Finish      peak 0.29  rms 0.065
+  sfx MenuMove    peak 0.16  rms 0.040
+  sfx MenuSelect  peak 0.14  rms 0.057
+  sfx MenuBack    peak 0.12  rms 0.048
+  sfx NewRecord   peak 0.20  rms 0.060
+  sfx Pause       peak 0.27  rms 0.070
+  music peak output 0.391
+  song KOROBEINIKI       32 bars   54.9 s
+  song MINUET IN G       64 bars   76.8 s
+  song AFTERGLOW DRIVE   52 bars  124.8 s
+  song MAPLE HOLLOW      52 bars  105.8 s
+  song NEON LOBBY        36 bars   86.4 s
+  song PIXEL SUNRISE     38 bars   69.1 s
+  song CLOSER            56 bars  141.5 s
+  song STICK SEASON      76 bars  154.6 s
+  song data OK

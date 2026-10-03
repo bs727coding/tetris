@@ -27,10 +27,10 @@ fs::path defaultDataDir()
 {
 #ifdef _WIN32
     if (const wchar_t* appData = _wgetenv(L"APPDATA"); appData && *appData)
-        return fs::path(appData) / L"ClaudeTetris";
+        return fs::path(appData) / L"Tetris";
 #endif
     std::error_code ec;
-    return fs::current_path(ec) / "ClaudeTetris";
+    return fs::current_path(ec) / "Tetris";
 }
 
 std::string todayString()
@@ -110,6 +110,9 @@ void ScoreBook::load(const fs::path& dir)
             else if (key == "name")       prefs.lastName = sanitizeName(value);
             else if (key == "mode")       prefs.lastMode = std::clamp(std::stoi(value), 0, kGameModes - 1);
             else if (key == "startLevel") prefs.startLevel = std::clamp(std::stoi(value), 1, 15);
+            else if (key == "song")       prefs.song = std::max(-1, std::stoi(value));
+            else if (key == "beaten")     prefs.beaten = value == "1";
+            else if (key == "eggs")       prefs.eggs = std::stoi(value);
         } catch (...) {
         }
     }
@@ -137,7 +140,10 @@ void ScoreBook::savePrefs() const
         << "fullscreen=" << (prefs.fullscreen ? 1 : 0) << '\n'
         << "name=" << prefs.lastName << '\n'
         << "mode=" << prefs.lastMode << '\n'
-        << "startLevel=" << prefs.startLevel << '\n';
+        << "startLevel=" << prefs.startLevel << '\n'
+        << "song=" << prefs.song << '\n'
+        << "beaten=" << (prefs.beaten ? 1 : 0) << '\n'
+        << "eggs=" << prefs.eggs << '\n';
 }
 
 int ScoreBook::rankFor(GameMode mode, const ScoreEntry& e) const

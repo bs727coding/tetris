@@ -1,6 +1,6 @@
 #pragma once
 // Per-mode top-10 leaderboards and small preferences, saved as text files in
-// %APPDATA%\ClaudeTetris (or next to the exe when APPDATA is unavailable).
+// %APPDATA%\Tetris (or next to the exe when APPDATA is unavailable).
 #include "game.hpp"
 
 #include <array>
@@ -28,6 +28,9 @@ struct Prefs {
     std::string lastName = "PLAYER";
     int lastMode = 0;
     int startLevel = 1;
+    int song = 0;         // gameplay music: a song index, or -1 for shuffle
+    bool beaten = false;  // Marathon has been beaten at least once
+    int eggs = 0;         // easter eggs found (bits, see app.hpp)
 };
 
 class ScoreBook {

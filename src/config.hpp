@@ -18,6 +18,7 @@ inline constexpr int    kLinesPerLevel  = 10;
 inline constexpr int    kMaxLevel       = 20;     // gravity stops getting faster here
 inline constexpr int    kMaxStartLevel  = 15;
 inline constexpr int    kSprintLines    = 40;
+inline constexpr int    kMarathonLines  = 200;    // clearing this many beats the game (0 = endless)
 inline constexpr double kUltraSeconds   = 120.0;
 inline constexpr int    kZenLevel       = 1;      // Zen uses a fixed, gentle gravity
 

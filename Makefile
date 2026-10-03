@@ -1,5 +1,5 @@
 # =============================================================================
-#  Claude Tetris - GNU Makefile (Windows, LLVM-MinGW clang)
+#  Tetris - GNU Makefile (Windows, LLVM-MinGW clang)
 #
 #    mingw32-make                 release build -> build/release/tetris.exe
 #    mingw32-make CONFIG=debug    debug build   -> build/debug/tetris.exe + .pdb

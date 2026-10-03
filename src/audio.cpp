@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -323,31 +324,76 @@ struct NoteEvent {
     int len;
     int note;   // MIDI note; for drums 0 kick, 1 snare, 2 closed hat, 3 open hat
     float vel;
+    int extra[3] = { -1, -1, -1 };  // more chord notes: the voice cycles through them, chiptune style
 };
 
 struct SongData {
     float bpm = 120.0f;
     int length = 0;  // ticks
-    float leadDuty = 0.25f, leadVol = 0.16f, harmVol = 0.05f, bassVol = 0.3f;
+    music::Voice voice;
     std::vector<NoteEvent> ch[4];  // lead, harmony, bass, drums
 };
 
 struct Chord {
-    const char* name;
-    int root;      // bass note
-    int tones[3];  // arpeggio notes
-};
-constexpr Chord kChords[] = {
-    { "Am", 45, { 57, 60, 64 } }, { "E", 40, { 56, 59, 64 } }, { "Dm", 38, { 57, 62, 65 } },
-    { "C", 36, { 55, 60, 64 } },  { "F", 41, { 57, 60, 65 } }, { "G", 43, { 55, 59, 62 } },
+    bool silent = false;
+    int bass = 36;   // bass note, C2..B2
+    int tones[4]{};  // close voicing between G3 and F#4
+    int count = 0;
 };
 
-const Chord& findChord(const std::string& name)
+// "C#" / "Bb" -> pitch class 0..11, advancing i; -1 if s[i] is not a note letter
+int pitchClass(const std::string& s, std::size_t& i)
 {
-    for (const Chord& c : kChords)
-        if (name == c.name)
-            return c;
-    return kChords[0];
+    static constexpr int kPitchClass[7] = { 9, 11, 0, 2, 4, 5, 7 };  // A B C D E F G
+    if (i >= s.size() || s[i] < 'A' || s[i] > 'G')
+        return -1;
+    int pc = kPitchClass[s[i++] - 'A'];
+    if (i < s.size() && s[i] == '#') { ++pc; ++i; }
+    else if (i < s.size() && s[i] == 'b') { --pc; ++i; }
+    return (pc + 12) % 12;
+}
+
+// "Am", "F#m7", "G/B", "Dsus4", "x" (silent)
+Chord parseChord(const std::string& tok, std::string& issues)
+{
+    Chord c;
+    std::size_t i = 0;
+    const int root = pitchClass(tok, i);
+    if (root < 0) {
+        if (tok != "x")
+            issues += "  unknown chord '" + tok + "'\n";
+        c.silent = true;
+        return c;
+    }
+    std::string quality = tok.substr(i);
+    int bassPc = root;
+    if (const auto slash = quality.find('/'); slash != std::string::npos) {
+        std::size_t j = slash + 1;
+        if (const int b = pitchClass(quality, j); b >= 0)
+            bassPc = b;
+        quality.resize(slash);
+    }
+    struct Quality { const char* name; int count; int iv[4]; };
+    static constexpr Quality kQualities[] = {
+        { "", 3, { 0, 4, 7 } },        { "m", 3, { 0, 3, 7 } },        { "7", 4, { 0, 4, 7, 10 } },
+        { "m7", 4, { 0, 3, 7, 10 } },  { "maj7", 4, { 0, 4, 7, 11 } }, { "sus2", 3, { 0, 2, 7 } },
+        { "sus4", 3, { 0, 5, 7 } },    { "dim", 3, { 0, 3, 6 } },      { "add9", 4, { 0, 4, 7, 2 } },
+    };
+    const Quality* q = &kQualities[0];
+    bool known = false;
+    for (const Quality& k : kQualities)
+        if (quality == k.name) {
+            q = &k;
+            known = true;
+        }
+    if (!known)
+        issues += "  unknown chord quality in '" + tok + "'\n";
+    c.count = q->count;
+    for (int n = 0; n < q->count; ++n)
+        c.tones[n] = 55 + ((root + q->iv[n] + 5) % 12);  // 55 = G3
+    std::sort(c.tones, c.tones + c.count);
+    c.bass = 36 + bassPc;
+    return c;
 }
 
 // "G#4" -> MIDI note number, or -1 if it is not a note name
@@ -366,7 +412,7 @@ int parseNote(const std::string& s)
 }
 
 // Appends a melody string; returns its length in ticks
-int addMelody(std::vector<NoteEvent>& out, const char* text, int startTick, float vel)
+int addMelody(std::vector<NoteEvent>& out, const char* text, int startTick, int shift, std::string& issues)
 {
     std::string cleaned(text);
     std::replace(cleaned.begin(), cleaned.end(), '|', ' ');  // bar lines are only for readability
@@ -375,24 +421,37 @@ int addMelody(std::vector<NoteEvent>& out, const char* text, int startTick, floa
     int tick = startTick;
     while (in >> tok) {
         const auto colon = tok.find(':');
-        if (colon == std::string::npos)
+        if (colon == std::string::npos) {
+            issues += "  bad melody token '" + tok + "'\n";
             continue;
+        }
         const int len = std::atoi(tok.c_str() + colon + 1);
         const std::string name = tok.substr(0, colon);
         const int note = parseNote(name);
         if (note >= 0)
-            out.push_back({ tick, len, note, vel });
+            out.push_back({ tick, len, note + shift, 1.0f });
+        else if (name != "R")
+            issues += "  bad note '" + tok + "'\n";
         tick += len;
     }
     return tick - startTick;
 }
 
-std::vector<std::string> words(const char* text)
+std::vector<std::string> split(const std::string& text, char sep)
 {
-    std::istringstream in(text);
     std::vector<std::string> out;
-    for (std::string w; in >> w;)
-        out.push_back(w);
+    std::string cur;
+    for (char ch : text) {
+        const bool brk = sep == ' ' ? std::isspace((unsigned char)ch) != 0 : ch == sep;
+        if (!brk) {
+            cur += ch;
+        } else if (!cur.empty()) {
+            out.push_back(cur);
+            cur.clear();
+        }
+    }
+    if (!cur.empty())
+        out.push_back(cur);
     return out;
 }
 
@@ -402,87 +461,237 @@ void sortSong(SongData& s)
         std::stable_sort(ch.begin(), ch.end(), [](const NoteEvent& a, const NoteEvent& b) { return a.tick < b.tick; });
 }
 
-SongData buildGameSong()
-{
-    SongData s;
-    s.bpm = cfg::kMusicBpm;
-    struct Section { const char* melody; const char* chords; bool busy; bool halfTime; };
-    const Section sections[] = {
-        { music::kKorobeinikiA, music::kKorobeinikiChordsA, false, false },
-        { music::kKorobeinikiA, music::kKorobeinikiChordsA, true,  false },
-        { music::kKorobeinikiB, music::kKorobeinikiChordsB, false, true  },
-        { music::kKorobeinikiB, music::kKorobeinikiChordsB, true,  true  },
-    };
-    int tick = 0;
-    for (const Section& sec : sections) {
-        const int len = addMelody(s.ch[0], sec.melody, tick, 1.0f);
-        const auto chords = words(sec.chords);
-        for (int bar = 0; bar < int(chords.size()); ++bar) {
-            const Chord& c = findChord(chords[std::size_t(bar)]);
-            const int t0 = tick + bar * 16;
-            static constexpr int kArp[4] = { 0, 1, 2, 1 };
-            if (sec.busy)
-                for (int i = 0; i < 16; ++i)
-                    s.ch[1].push_back({ t0 + i, 1, c.tones[kArp[i % 4]] + 12, 0.7f });
-            else
-                for (int i = 0; i < 8; ++i)
-                    s.ch[1].push_back({ t0 + i * 2, 2, c.tones[kArp[i % 4]], 0.9f });
-            for (int i = 0; i < 8; ++i)
-                s.ch[2].push_back({ t0 + i * 2, 2, c.root + (i % 2 ? 12 : 0), 1.0f });
+// One bar of accompaniment. `at(i)` is the chord sounding i ticks into the bar.
+struct BarWriter {
+    SongData& s;
+    const std::vector<Chord>& slices;
+    int t0, bt;       // bar start, ticks per bar
+    int bar, bars;    // index within the section, section length in bars
 
-            const bool fill = bar == int(chords.size()) - 1;
-            if (sec.halfTime) {
-                s.ch[3].push_back({ t0, 1, 0, 1.0f });
-                s.ch[3].push_back({ t0 + 8, 1, 1, 0.9f });
-                for (int i = 0; i < 16; i += 4)
-                    s.ch[3].push_back({ t0 + i, 1, 2, 0.7f });
-                s.ch[3].push_back({ t0 + 14, 1, 3, 0.6f });
-            } else {
-                s.ch[3].push_back({ t0, 1, 0, 1.0f });
-                s.ch[3].push_back({ t0 + 8, 1, 0, 0.9f });
-                if (bar % 2 == 1)
-                    s.ch[3].push_back({ t0 + 10, 1, 0, 0.7f });
-                s.ch[3].push_back({ t0 + 4, 1, 1, 0.9f });
-                if (fill) {
-                    for (int i = 12; i < 16; ++i)
-                        s.ch[3].push_back({ t0 + i, 1, 1, 0.55f + 0.12f * float(i - 12) });
-                } else {
-                    s.ch[3].push_back({ t0 + 12, 1, 1, 0.9f });
+    const Chord& at(int i) const
+    {
+        const std::size_t n = slices.size();
+        return slices[std::min(n - 1, std::size_t(i) * n / std::size_t(bt))];
+    }
+    bool sliceStart(int i) const { return i == 0 || &at(i) != &at(i - 1); }
+
+    void harm(music::Harm h)
+    {
+        using music::Harm;
+        static constexpr int kArp[4] = { 0, 1, 2, 1 };
+        static constexpr int kPick[8] = { 0, 2, 3, 2, 1, 2, 3, 2 };  // 3 = root an octave up
+        for (int i = 0; i < bt; ++i) {
+            const Chord& c = at(i);
+            if (c.silent)
+                continue;
+            const int t = t0 + i;
+            switch (h) {
+                case Harm::None: break;
+                case Harm::Arp8:
+                    if (i % 2 == 0)
+                        s.ch[1].push_back({ t, 2, c.tones[kArp[(i / 2) % 4]], 0.9f });
+                    break;
+                case Harm::Arp16:
+                    s.ch[1].push_back({ t, 1, c.tones[kArp[i % 4]] + 12, 0.7f });
+                    break;
+                case Harm::Up16: {
+                    const int up[4] = { c.tones[0], c.tones[1], c.tones[2], c.tones[0] + 12 };
+                    s.ch[1].push_back({ t, 1, up[i % 4] + 12, 0.8f });
+                    break;
                 }
-                for (int i = 0; i < (fill ? 12 : 16); i += 2)
-                    s.ch[3].push_back({ t0 + i, 1, 2, (i % 4 == 2) ? 0.8f : 0.45f });
+                case Harm::Pluck:
+                    if (i % 2 == 0) {
+                        const int k = kPick[(i / 2) % 8];
+                        s.ch[1].push_back({ t, 2, k == 3 ? c.tones[0] + 12 : c.tones[k], 0.85f });
+                    }
+                    break;
+                case Harm::Stab:
+                    if (i % 4 == 2)
+                        s.ch[1].push_back(chordEvent(c, t, 1, 1.0f));
+                    break;
+                case Harm::Pad:
+                    if (i % 4 == 0 || sliceStart(i))
+                        s.ch[1].push_back(chordEvent(c, t, 4 - i % 4, i % 8 == 0 ? 0.85f : 0.65f));
+                    break;
             }
         }
+    }
+
+    static NoteEvent chordEvent(const Chord& c, int t, int len, float vel)
+    {
+        NoteEvent e{ t, len, c.tones[0] + 12, vel };
+        for (int n = 1; n < c.count && n < 4; ++n)
+            e.extra[n - 1] = c.tones[n] + 12;
+        return e;
+    }
+
+    void bass(music::Bass b)
+    {
+        using music::Bass;
+        static constexpr int kWalk[4] = { 0, 7, 12, 7 };
+        for (int i = 0; i < bt; ++i) {
+            const Chord& c = at(i);
+            if (c.silent)
+                continue;
+            const int t = t0 + i;
+            const int r = c.bass;
+            switch (b) {
+                case Bass::None: break;
+                case Bass::Octave8:
+                    if (i % 2 == 0)
+                        s.ch[2].push_back({ t, 2, r + ((i / 2) % 2 ? 12 : 0), 1.0f });
+                    break;
+                case Bass::RootFifth:
+                    if (sliceStart(i) || i == bt / 2)
+                        s.ch[2].push_back({ t, std::min(bt / 2, bt - i), r + (i >= bt / 2 ? 7 : 0), i == 0 ? 1.0f : 0.9f });
+                    break;
+                case Bass::Quarters:
+                    if (i % 4 == 0)
+                        s.ch[2].push_back({ t, 4, r + kWalk[(i / 4) % 4], i == 0 ? 1.0f : 0.85f });
+                    break;
+                case Bass::Drive:
+                    if (i % 2 == 0)
+                        s.ch[2].push_back({ t, 2, r, i % 4 == 0 ? 1.0f : 0.75f });
+                    break;
+                case Bass::Pump:
+                    if (i % 4 == 0)
+                        s.ch[2].push_back({ t, 1, r, 0.7f });
+                    else if (i % 4 == 2)
+                        s.ch[2].push_back({ t, 2, r + 12, 1.0f });
+                    break;
+                case Bass::Pick:
+                    if (i == 0 || sliceStart(i))
+                        s.ch[2].push_back({ t, 6, r, 1.0f });
+                    else if (i == bt / 2)
+                        s.ch[2].push_back({ t, 6, r + 7, 0.9f });
+                    else if (i == bt - 2)
+                        s.ch[2].push_back({ t, 2, r + 12, 0.6f });
+                    break;
+            }
+        }
+    }
+
+    void hit(int i, int drum, float vel) { s.ch[3].push_back({ t0 + i, 1, drum, vel }); }
+
+    void drums(music::Drums d)
+    {
+        using music::Drums;
+        const bool fill = bar == bars - 1;
+        switch (d) {
+            case Drums::None: break;
+            case Drums::Light:
+                hit(0, 0, 0.5f);
+                for (int i = 2; i < bt; i += 4)
+                    hit(i, 2, 0.35f);
+                break;
+            case Drums::Rock:
+                hit(0, 0, 1.0f);
+                hit(8, 0, 0.9f);
+                if (bar % 2 == 1)
+                    hit(10, 0, 0.7f);
+                hit(4, 1, 0.9f);
+                if (fill) {
+                    for (int i = 12; i < 16; ++i)
+                        hit(i, 1, 0.55f + 0.12f * float(i - 12));
+                } else {
+                    hit(12, 1, 0.9f);
+                }
+                for (int i = 0; i < (fill ? 12 : 16); i += 2)
+                    hit(i, 2, (i % 4 == 2) ? 0.8f : 0.45f);
+                break;
+            case Drums::Half:
+                hit(0, 0, 1.0f);
+                hit(8, 1, 0.9f);
+                for (int i = 0; i < 16; i += 4)
+                    hit(i, 2, 0.7f);
+                hit(14, 3, 0.6f);
+                break;
+            case Drums::Four:
+                for (int i = 0; i < bt; ++i) {
+                    if (i % 4 == 0)
+                        hit(i, 0, 1.0f);
+                    if (fill && i >= 12) {
+                        hit(i, 1, 0.5f + 0.15f * float(i - 12));
+                        continue;
+                    }
+                    if (i == 4 || i == 12)
+                        hit(i, 1, 0.9f);
+                    if (i % 4 == 2)
+                        hit(i, 3, 0.55f);
+                    else if (i % 2 == 1)
+                        hit(i, 2, 0.3f);
+                }
+                break;
+            case Drums::Build: {
+                // a snare roll that tightens and swells, then a breath before the drop
+                const int total = bars * bt;
+                for (int i = 0; i < bt; ++i) {
+                    const float p = float(bar * bt + i) / float(total);
+                    if (fill && i >= bt / 2)
+                        break;
+                    if (i % 4 == 0)
+                        hit(i, 0, 0.9f);
+                    const int every = p < 0.5f ? 4 : p < 0.75f ? 2 : 1;
+                    if (i % every == 0)
+                        hit(i, 1, 0.35f + 0.6f * p);
+                }
+                break;
+            }
+            case Drums::Folk:
+                hit(0, 0, 1.0f);
+                hit(8, 0, 0.85f);
+                hit(10, 0, 0.55f);
+                hit(4, 1, 0.65f);
+                hit(12, 1, 0.65f);
+                for (int i = 0; i < bt; i += 2)
+                    hit(i, 2, i % 4 == 0 ? 0.25f : 0.4f);
+                break;
+            case Drums::Waltz:
+                hit(0, 0, 0.8f);
+                for (int i = 4; i < bt; i += 4)
+                    hit(i, 1, 0.3f);
+                for (int i = 2; i < bt; i += 4)
+                    hit(i, 2, 0.35f);
+                break;
+        }
+    }
+};
+
+SongData buildSong(const music::SongDef& def, std::string& issues)
+{
+    SongData s;
+    s.bpm = def.bpm;
+    s.voice = def.voice;
+    const int bt = def.barTicks;
+    int tick = 0;
+    for (int si = 0; si < def.sectionCount; ++si) {
+        const music::Section& sec = def.sections[si];
+        std::string sectionIssues;
+        const auto bars = split(sec.chords, ' ');
+        const int len = int(bars.size()) * bt;
+        if (*sec.melody) {
+            const int melody = addMelody(s.ch[0], sec.melody, tick, sec.shift, sectionIssues);
+            if (melody != len)
+                sectionIssues += "  melody is " + std::to_string(melody) + " ticks but the chords span " + std::to_string(len) + "\n";
+        }
+        for (int bar = 0; bar < int(bars.size()); ++bar) {
+            std::vector<Chord> slices;
+            for (const std::string& part : split(bars[std::size_t(bar)], ','))
+                slices.push_back(parseChord(part, sectionIssues));
+            if (slices.empty())
+                slices.push_back(Chord{ true });
+            BarWriter w{ s, slices, tick + bar * bt, bt, bar, int(bars.size()) };
+            w.harm(sec.harm);
+            w.bass(sec.bass);
+            w.drums(sec.drums);
+        }
+        if (!sectionIssues.empty())
+            issues += std::string(def.title) + ", section " + std::to_string(si + 1) + ":\n" + sectionIssues;
         tick += len;
     }
     s.length = tick;
-    sortSong(s);
-    return s;
-}
-
-SongData buildTitleSong()
-{
-    SongData s;
-    s.bpm = 100.0f;
-    s.leadDuty = 0.5f;
-    s.leadVol = 0.1f;
-    s.harmVol = 0.045f;
-    s.bassVol = 0.26f;
-    const int len = addMelody(s.ch[0], music::kTitleMelody, 0, 1.0f);
-    const auto chords = words(music::kTitleChords);
-    for (int bar = 0; bar < int(chords.size()); ++bar) {
-        const Chord& c = findChord(chords[std::size_t(bar)]);
-        const int t0 = bar * 16;
-        const int arp[4] = { c.tones[0], c.tones[1], c.tones[2], c.tones[0] + 12 };
-        for (int i = 0; i < 16; ++i)
-            s.ch[1].push_back({ t0 + i, 1, arp[i % 4] + 12, 0.8f });
-        s.ch[2].push_back({ t0, 8, c.root, 1.0f });
-        s.ch[2].push_back({ t0 + 8, 8, c.root + 7, 0.9f });
-        s.ch[3].push_back({ t0, 1, 0, 0.5f });
-        for (int i = 2; i < 16; i += 4)
-            s.ch[3].push_back({ t0 + i, 1, 2, 0.35f });
-    }
-    s.length = len;
+    for (auto& ch : s.ch)  // nothing may run past the loop point
+        ch.erase(std::remove_if(ch.begin(), ch.end(), [&](const NoteEvent& e) { return e.tick >= tick; }), ch.end());
     sortSong(s);
     return s;
 }
@@ -490,12 +699,15 @@ SongData buildTitleSong()
 struct ToneVoice {
     bool active = false;
     float phase = 0.0f;
-    float freq = 0.0f;
+    float freq[4]{};
+    int notes = 1;  // >1: a chiptune chord, cycling through freq[] at 60 Hz
     float vel = 0.0f;
     float env = 0.0f;
     float startEnv = 0.0f;
     float age = 0.0f;
     int gate = 0;  // samples until release
+
+    float pitch() const { return notes > 1 ? freq[int(age * 60.0f) % notes] : freq[0]; }
 };
 
 struct DrumVoice {
@@ -507,69 +719,94 @@ struct DrumVoice {
 
 class MusicSynth {
 public:
-    std::atomic<int> song{ 0 };
+    std::atomic<int> song{ kNoSong };
+    std::atomic<bool> playlist{ false };  // hand over to the next menu track when the song ends
+    std::atomic<int> menuPos{ -1 };       // index into music::kMenuPlaylist
     std::atomic<float> tempo{ 1.0f };
     std::atomic<float> gain{ 0.0f };
     std::atomic<float> peak{ 0.0f };  // loudest output sample so far (diagnostics)
 
-    SongData songs[3];  // indexed by Song; [0] stays empty
+    std::vector<SongData> songs;  // built before the stream starts, read-only afterwards
+
+    MusicSynth() : echoL_(kRate, 0.0f), echoR_(kRate, 0.0f) {}
 
     void render(float* out, unsigned frames)
     {
         const int want = song.load(std::memory_order_relaxed);
-        if (want != playing_) {
-            playing_ = want;
-            tick_ = 0.0;
-            for (auto& n : next_) n = 0;
-            for (auto& v : tone_) v.gate = 0;
-        }
-        const SongData& s = songs[std::clamp(playing_, 0, 2)];
-        const bool hasSong = s.length > 0;
-        const double ticksPerSample = hasSong ? s.bpm * tempo.load(std::memory_order_relaxed) * 4.0 / 60.0 / kRate : 0.0;
-        const float samplesPerTick = hasSong ? float(1.0 / ticksPerSample) : 0.0f;
+        if (want != playing_)
+            start(want, 0.0);
+        const SongData* s = current();
+        double ticksPerSample = 0.0;
+        float samplesPerTick = 0.0f;
+        auto retime = [&] {
+            ticksPerSample = s ? s->bpm * tempo.load(std::memory_order_relaxed) * 4.0 / 60.0 / kRate : 0.0;
+            samplesPerTick = s ? float(1.0 / ticksPerSample) : 0.0f;
+        };
+        retime();
         const float target = gain.load(std::memory_order_relaxed);
         float blockPeak = 0.0f;
 
         for (unsigned i = 0; i < frames; ++i) {
             level_ += (target - level_) * 0.0008f;
-            if (hasSong) {
+            if (s) {
                 for (int c = 0; c < 4; ++c) {
-                    const auto& ev = s.ch[c];
+                    const auto& ev = s->ch[c];
                     while (next_[c] < ev.size() && ev[next_[c]].tick <= tick_)
                         trigger(c, ev[next_[c]++], samplesPerTick);
                 }
                 tick_ += ticksPerSample;
-                if (tick_ >= s.length) {
-                    tick_ -= s.length;
-                    for (auto& n : next_) n = 0;
+                if (tick_ >= s->length) {
+                    if (playlist.load(std::memory_order_relaxed)) {
+                        const int pos = (menuPos.load(std::memory_order_relaxed) + 1) % music::kMenuPlaylistSize;
+                        int expected = playing_;
+                        if (song.compare_exchange_strong(expected, music::kMenuPlaylist[pos])) {
+                            menuPos.store(pos, std::memory_order_relaxed);
+                            start(music::kMenuPlaylist[pos], -16.0);  // a bar's breath between tracks
+                            s = current();
+                            retime();
+                        }
+                    } else {
+                        tick_ -= s->length;
+                        for (auto& n : next_) n = 0;
+                    }
                 }
             }
 
-            float l = 0.0f, r = 0.0f;
+            float l = 0.0f, r = 0.0f, send = 0.0f;
+            const music::Voice& vo = s ? s->voice : kSilentVoice;
             // Lead: pulse wave with a delayed vibrato
             if (float e = envelope(tone_[0], 0.7f, 0.25f, 0.03f); e > 0.0f) {
                 ToneVoice& v = tone_[0];
                 const float vib = 1.0f + 0.0045f * std::sin(kTwoPi * 5.5f * v.age) * std::clamp((v.age - 0.15f) * 8.0f, 0.0f, 1.0f);
-                const float dt = v.freq * vib / kRate;
-                const float x = pulseWave(v.phase, dt, s.leadDuty) * e * v.vel * s.leadVol;
+                const float dt = v.pitch() * vib / kRate;
+                const float x = pulseWave(v.phase, dt, vo.leadDuty) * e * v.vel * vo.leadVol;
                 advance(v.phase, dt);
                 l += x;
                 r += x;
+                send += x;
             }
             // Harmony: thin plucky pulse, a little to the right
             if (float e = envelope(tone_[1], 0.4f, 0.08f, 0.02f); e > 0.0f) {
                 ToneVoice& v = tone_[1];
-                const float dt = v.freq / kRate;
-                const float x = pulseWave(v.phase, dt, 0.125f) * e * v.vel * s.harmVol;
+                const float dt = v.pitch() / kRate;
+                const float x = pulseWave(v.phase, dt, vo.harmDuty) * e * v.vel * vo.harmVol;
                 advance(v.phase, dt);
                 l += x * 0.8f;
                 r += x * 1.2f;
+                send += x * 0.7f;
             }
-            // Bass: triangle
+            // Bass: NES-style triangle, or a filtered saw for the 16-bit songs
             if (float e = envelope(tone_[2], 0.85f, 0.3f, 0.02f); e > 0.0f) {
                 ToneVoice& v = tone_[2];
-                const float dt = v.freq / kRate;
-                const float x = triWave(v.phase) * e * v.vel * s.bassVol;
+                const float dt = v.pitch() / kRate;
+                float x;
+                if (vo.synthBass) {
+                    bassLp_ += 0.08f * (sawWave(v.phase, dt) - bassLp_);
+                    x = bassLp_ * 1.2f;
+                } else {
+                    x = triWave(v.phase);
+                }
+                x *= e * v.vel * vo.bassVol;
                 advance(v.phase, dt);
                 l += x;
                 r += x;
@@ -605,6 +842,17 @@ public:
                 r += x * 0.8f;
                 d.t += kStep;
             }
+            // Ping-pong echo on the melodic channels
+            {
+                const std::size_t n = echoL_.size();
+                const std::size_t rd = (echoPos_ + n - std::size_t(echoDelay_)) % n;
+                const float yl = echoL_[rd], yr = echoR_[rd];
+                echoL_[echoPos_] = send + yr * 0.38f;
+                echoR_[echoPos_] = yl * 0.38f;
+                echoPos_ = (echoPos_ + 1) % n;
+                l += yl * echoMix_;
+                r += yr * echoMix_;
+            }
 
             out[2 * i] = std::tanh(l * 1.3f) * level_;
             out[2 * i + 1] = std::tanh(r * 1.3f) * level_;
@@ -615,6 +863,27 @@ public:
     }
 
 private:
+    static inline const music::Voice kSilentVoice{};
+
+    const SongData* current() const
+    {
+        return playing_ >= 0 && playing_ < int(songs.size()) && songs[std::size_t(playing_)].length > 0
+                   ? &songs[std::size_t(playing_)]
+                   : nullptr;
+    }
+
+    void start(int id, double fromTick)
+    {
+        playing_ = id;
+        tick_ = fromTick;
+        for (auto& n : next_) n = 0;
+        for (auto& v : tone_) v.gate = 0;
+        if (const SongData* s = current()) {
+            echoMix_ = s->voice.echo;
+            echoDelay_ = std::clamp(int(0.75 * 60.0 / s->bpm * kRate), 1, kRate - 1);
+        }
+    }
+
     static void advance(float& phase, float dt)
     {
         phase += dt;
@@ -655,23 +924,33 @@ private:
         ToneVoice& v = tone_[ch];
         v.startEnv = v.active ? v.env : 0.0f;
         v.active = true;
-        v.freq = midiHz(float(e.note));
+        v.freq[0] = midiHz(float(e.note));
+        v.notes = 1;
+        for (int n : e.extra)
+            if (n >= 0)
+                v.freq[v.notes++] = midiHz(float(n));
         v.vel = e.vel;
         v.age = 0.0f;
         const float articulation = ch == 1 ? 0.6f : 0.9f;
         v.gate = int(float(e.len) * samplesPerTick * articulation);
     }
 
-    int playing_ = -1;
+    int playing_ = -2;  // forces a start() on the first block
     double tick_ = 0.0;
     std::size_t next_[4]{};
     ToneVoice tone_[3];
     DrumVoice drum_[4];
     float level_ = 0.0f;
+    float bassLp_ = 0.0f;
+    std::vector<float> echoL_, echoR_;
+    std::size_t echoPos_ = 0;
+    int echoDelay_ = kRate / 4;
+    float echoMix_ = 0.0f;
     NoiseGen noise_;
 };
 
 MusicSynth g_music;
+std::string g_songIssues;  // problems found while building the song library (reported by --autotest)
 
 void musicCallback(void* buffer, unsigned int frames)
 {
@@ -696,8 +975,10 @@ bool Audio::init()
             voices_[std::size_t(i)].push_back(LoadSoundAlias(base));
     }
 
-    g_music.songs[int(Song::Title)] = buildTitleSong();
-    g_music.songs[int(Song::Game)] = buildGameSong();
+    g_music.songs.clear();
+    g_songIssues.clear();
+    for (const music::SongDef& def : music::kSongs)
+        g_music.songs.push_back(buildSong(def, g_songIssues));
     stream_ = LoadAudioStream(kRate, 32, 2);
     SetAudioStreamCallback(stream_, musicCallback);
     PlayAudioStream(stream_);
@@ -738,9 +1019,57 @@ void Audio::play(Sfx sfx, float pitch, float volume, float pan)
     PlaySound(s);
 }
 
-void Audio::setSong(Song song)
+void Audio::playSong(int song)
 {
-    g_music.song.store(int(song), std::memory_order_relaxed);
+    if (song < 0 || song >= music::kSongCount)
+        song = kNoSong;
+    g_music.playlist.store(false, std::memory_order_relaxed);
+    g_music.song.store(song, std::memory_order_relaxed);
+}
+
+void Audio::playMenuMusic(bool next)
+{
+    if (!next && menuMusicPlaying())
+        return;
+    const int pos = (g_music.menuPos.load(std::memory_order_relaxed) + 1) % music::kMenuPlaylistSize;
+    g_music.menuPos.store(pos, std::memory_order_relaxed);
+    g_music.playlist.store(true, std::memory_order_relaxed);
+    g_music.song.store(music::kMenuPlaylist[pos], std::memory_order_relaxed);
+}
+
+bool Audio::menuMusicPlaying() const
+{
+    return g_music.playlist.load(std::memory_order_relaxed) && g_music.song.load(std::memory_order_relaxed) != kNoSong;
+}
+
+int Audio::currentSong() const
+{
+    return g_music.song.load(std::memory_order_relaxed);
+}
+
+bool Audio::songSecret(int song)
+{
+    return song >= 0 && song < music::kSongCount && music::kSongs[song].secret;
+}
+
+int Audio::creditsSong()
+{
+    return music::kCreditsSong;
+}
+
+int Audio::songCount()
+{
+    return music::kSongCount;
+}
+
+const char* Audio::songTitle(int song)
+{
+    return song >= 0 && song < music::kSongCount ? music::kSongs[song].title : "";
+}
+
+const char* Audio::songCredit(int song)
+{
+    return song >= 0 && song < music::kSongCount ? music::kSongs[song].credit : "";
 }
 
 void Audio::setTempo(float scale)
@@ -780,5 +1109,12 @@ std::string Audio::levelReport() const
         out += line;
     }
     std::snprintf(line, sizeof line, "  music peak output %.3f\n", g_music.peak.load());
-    return out + line;
+    out += line;
+    for (int i = 0; i < music::kSongCount; ++i) {
+        const SongData& sd = g_music.songs[std::size_t(i)];
+        std::snprintf(line, sizeof line, "  song %-16s %3d bars  %5.1f s\n", music::kSongs[i].title,
+                      sd.length / music::kSongs[i].barTicks, double(sd.length) * 15.0 / double(sd.bpm));
+        out += line;
+    }
+    return out + (g_songIssues.empty() ? std::string("  song data OK\n") : "  SONG DATA PROBLEMS\n" + g_songIssues);
 }

@@ -1,4 +1,4 @@
-// Claude Tetris - entry point: window, main loop, global hotkeys and --autotest.
+// Tetris - entry point: window, main loop, global hotkeys and --autotest.
 #include "app.hpp"
 #include "config.hpp"
 #include "raylib.h"
@@ -68,7 +68,8 @@ void handleHotkeys(App& app)
         showToast(app, p.sfx ? "SOUND EFFECTS ON" : "SOUND EFFECTS OFF");
         app.book.savePrefs();
     }
-    if (IsKeyPressed(KEY_B)) {
+    const bool konamiWantsB = app.screen == Screen::Title && app.konami == 8;  // B is part of the code there
+    if (IsKeyPressed(KEY_B) && !konamiWantsB) {
         p.bloom = !p.bloom;
         showToast(app, p.bloom ? "GLOW ON" : "GLOW OFF");
         app.book.savePrefs();
@@ -130,7 +131,16 @@ public:
                 next();
                 break;
             case 13: if (app.screen == Screen::Controls && app.screenTime > 0.8f) shot("08_controls.png"); break;
-            case 14: finish(app, "OK"); break;
+            case 14:  // the credits as a champion sees them (stats of the last run)
+                app.creditsWin = true;
+                app.creditsUnlock = true;
+                goTo(app, Screen::Credits);
+                next();
+                break;
+            case 15: if (app.screen == Screen::Credits && app.screenTime > 3.0f) shot("09_credits.png"); break;
+            case 16: app.creditsScroll = 1e6f; next(); break;  // jump to the end
+            case 17: if (t_ > 1.0f) shot("10_credits_end.png"); break;
+            case 18: finish(app, "OK"); break;
             default: break;
         }
     }
